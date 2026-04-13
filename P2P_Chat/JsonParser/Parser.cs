@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace P2P_Chat.JsonParser
 {
-    
+    /* Parser / Serializer */
     class Parser
     {
 

@@ -4,12 +4,18 @@ using System.Text;
 
 namespace P2P_Chat.JsonParser
 {
+    /* Rodzaje wysyłanej wiadomości 
+        - HELLO: Powitanie w sieci,
+        - MESSAGE: Wiadomość,
+        - GOODBYE: Pożegnanie,
+    */
     enum MessageType
     {
         HELLO,
         MESSAGE,
         GOODBYE
     }
+    /* Struktura Wiadomości - stosowany format: JSON */
     class Model
     {
         public string Name { get; set; } = "";

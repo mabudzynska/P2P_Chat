@@ -4,6 +4,7 @@ using System.Text;
 
 namespace P2P_Chat.Network
 {
+    /* Klasa przechowująca informacje o wykrytym peerze w sieci. */
     internal class Peer
     {
         public string Name { get; set; } = "";
