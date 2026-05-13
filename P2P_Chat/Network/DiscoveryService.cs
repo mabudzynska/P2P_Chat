@@ -59,11 +59,17 @@ namespace P2P_Chat.Network
             await udpService.SendBroadcast(jsonMessage);
         }
 
-        public void HandleHello(Model model, IPEndPoint remote)
+        public void HandleHello(Model model, IPEndPoint endpoint)
         {
-            // Zobacz z jakiego adresu UDP przyszła wiadomość
-            string ip = remote.Address.ToString();
-            // Przekaż dane do menadżera peerów (Nazwa, adres IP (uniq) oraz port z którego to przyszło (TCP))
+            // Jeśli imię w odebranym pakiecie jest takie samo jak moje -> ignoruj (to ja)
+            if (model.Name == this.Name)
+            {
+                return;
+            }
+            string ip = endpoint.Address.ToString();
+            // Jeśli adres to IPv6 loopback, zamień na czytelne 127.0.0.1
+            if (ip == "::1") ip = "127.0.0.1";
+
             peerManager.addPeer(model.Name, ip, model.Port);
         }
 

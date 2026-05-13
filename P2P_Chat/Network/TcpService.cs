@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 
 using System.Net;
 using System.Net.Sockets;
@@ -65,17 +64,20 @@ namespace P2P_Chat.Network
         {
             try
             {
-                TcpClient client = new TcpClient();
-
-                await client.ConnectAsync(IPAddress.Parse(ip), port);
-                var stream = client.GetStream();
-                byte[] data = Encoding.UTF8.GetBytes(message);
-                await stream.WriteAsync(data, 0, data.Length);
-                client.Close();
+                using (TcpClient client = new TcpClient())
+                {
+                    await client.ConnectAsync(ip, port);
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        byte[] data = Encoding.UTF8.GetBytes(message);
+                        await stream.WriteAsync(data, 0, data.Length);
+                    }
+                } // client i stream zamkną się automatycznie
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error sending TCP message: {ex.Message}");
+                Console.WriteLine($"Błąd wysyłania TCP: {ex.Message}");
+                throw; // to po to aby MainWindow mógł to zalogować
             }
         }
     }
