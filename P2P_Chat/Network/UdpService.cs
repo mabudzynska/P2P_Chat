@@ -8,6 +8,8 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Interop;
+//do obslugi kart sieciowych
+using System.Net.NetworkInformation;
 
 
 namespace P2P_Chat.Network
@@ -46,16 +48,71 @@ namespace P2P_Chat.Network
             }
         }
 
-        // Wysyłanie danych na broadcast
+        // Wysyłanie danych na broadcast do wszystkich kart sieciowych
         public async Task SendBroadcast(string message)
         {
             Console.WriteLine("Sending on broadcast");
-            // Kodowanie stringa do bajtów zgodnie z UTF8 
             byte[] data = Encoding.UTF8.GetBytes(message);
-            // Stworzenie Endpointu
-            IPEndPoint ep = new IPEndPoint(IPAddress.Broadcast, port);
-            // Ślij dane
-            await udpClient.SendAsync(data, data.Length, ep);
+
+            bool sent = false;
+
+            // Przejście przez wszystkie karty sieciowe w komputerze
+            foreach (NetworkInterface ni in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                // Interesują nas tylko te włączone, pomijając Loopback (localhost)
+                if (ni.OperationalStatus == OperationalStatus.Up && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                {
+                    foreach (UnicastIPAddressInformation ip in ni.GetIPProperties().UnicastAddresses)
+                    {
+                        if (ip.Address.AddressFamily == AddressFamily.InterNetwork) // Tylko IPv4
+                        {
+                            // Wylicz adres broadcast dla tej konkretnej sieci (np. 192.168.1.255)
+                            IPAddress broadcastIp = GetBroadcastAddress(ip.Address, ip.IPv4Mask);
+                            if (broadcastIp != null)
+                            {
+                                IPEndPoint ep = new IPEndPoint(broadcastIp, port);
+                                try
+                                {
+                                    await udpClient.SendAsync(data, data.Length, ep);
+                                    sent = true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    // Ignorujemy błędy wysyłania na konkretnej karcie, żeby nie zablokować pętli
+                                    Console.WriteLine($"Błąd wysyłania UDP na {broadcastIp}: {ex.Message}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback: jeśli z jakiegoś powodu nie znaleziono kart, wyślij klasycznie
+            if (!sent)
+            {
+                IPEndPoint ep = new IPEndPoint(IPAddress.Broadcast, port);
+                await udpClient.SendAsync(data, data.Length, ep);
+            }
+        }
+
+        // Funkcja pomocnicza: Oblicza adres broadcast na podstawie IP i maski podsieci
+        private IPAddress GetBroadcastAddress(IPAddress address, IPAddress subnetMask)
+        {
+            if (subnetMask == null) return null;
+
+            byte[] ipAddressBytes = address.GetAddressBytes();
+            byte[] subnetMaskBytes = subnetMask.GetAddressBytes();
+
+            if (ipAddressBytes.Length != subnetMaskBytes.Length)
+                return null;
+
+            byte[] broadcastAddress = new byte[ipAddressBytes.Length];
+            for (int i = 0; i < broadcastAddress.Length; i++)
+            {
+                // Operacja bitowa: Adres IP OR (NOT Maska)
+                broadcastAddress[i] = (byte)(ipAddressBytes[i] | (subnetMaskBytes[i] ^ 255));
+            }
+            return new IPAddress(broadcastAddress);
         }
     }
 
