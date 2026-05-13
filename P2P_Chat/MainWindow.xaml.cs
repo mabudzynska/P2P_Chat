@@ -5,7 +5,6 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Windows;
-using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
@@ -20,6 +19,8 @@ namespace P2P_Chat
 {
     public partial class MainWindow : Window
     {
+        //zmienna nazwy użytkownika
+        private string _userName;
         // Serwic do obsługi UDP
         private UdpService udp;
         // Serwic do obsługi TCP
@@ -30,9 +31,11 @@ namespace P2P_Chat
         // Menadżer zarządzający peerami
         private PeerManager peerManager;
         
-        public MainWindow()
+        public MainWindow(string userName)
         {
             InitializeComponent();
+            //przypisanie nazwy z okna logowania
+            _userName = userName;
             // Utworzenie clienta TCP na porcie 53241
             tcp = new TcpService(53241);
             // Utworzenie socketa UDP na porcie 50000
@@ -42,7 +45,7 @@ namespace P2P_Chat
             // Inicjalizacja serwisu zarządzania statusem w sieci.
             discovery = new DiscoveryService(
                 udp,        // handler do serwisu UDP
-                "Marta",    // NAZWA UŻYTKOWNIKA - ustwić dopiero po jakimś okienku logowania / popupie
+                _userName,    // NAZWA UŻYTKOWNIKA
                 53241,      // PORT TAKI SAM JAK W TCP!!!
                 peerManager // handler do menadżera peerów
             );
@@ -72,6 +75,16 @@ namespace P2P_Chat
                     // co 3 sekundy wyślij że jesteś aktywny, a potem sprawdź czy pozostałe peery nie zrobiły timeoutu.
                     await discovery.SendHello();
                     peerManager.ValidatePeers();
+                    //Odświeżanie listy osób po prawej stronie
+                    Dispatcher.Invoke(() =>
+                    {
+                        PeersListBox.Items.Clear();
+                        foreach (var peer in peerManager.GetPeers())
+                        {
+                            // Wyświetlamy Nazwę i IP dla ułatwienia testów
+                            PeersListBox.Items.Add($"{peer.Name} ({peer.IP})");
+                        }
+                    });
                     await Task.Delay(3000);
                 }
             });
@@ -80,34 +93,32 @@ namespace P2P_Chat
         // Calback dla btn click
         private async void SendButton_Click(object sender, RoutedEventArgs e)
         {
-            // pobieranie wiadomości z pola
             string msg = MessageInput.Text;
-            // wyślij tylko jeśli pole nie jest puste!
-            if (!string.IsNullOrEmpty(msg))
-            {
-                // Konwertowanie wiadomości do formatu JSON
-                var model = new Model
-                {
-                    Type = MessageType.MESSAGE,
-                    Name = "Marta",
-                    payload = msg
-                };
-                string json = Parser.ParseModelToJson(model);
+            if (string.IsNullOrEmpty(msg)) return;
 
-                /* UWAGA! Na ten moment to działa troche jak broadcast (dla testu) - wysyła do każdego wykrytego peera w sieci
-                 napisaną wiadomość - Prawdopodobnie wyśle też do samego siebie - nastąpi zapętlenie!!!!! Docelowo należy to zmienić
-                , gdy zostanie wybrany użytkownik do którego piszemy, wysłać do konkretnego peera po kluczu. 
-                
-                 ! Klase Model możliwe że też trzeba zmienić żeby przechowywała Nazwę użytkownika. */
-                foreach (var peer in peerManager.GetPeers())
+            // Najpierw dodaj do siebie, żeby widzieć, że przycisk działa
+            ChatBox.Items.Add($"ME: {msg}");
+            MessageInput.Clear();
+
+            var peers = peerManager.GetPeers();
+            // Debug: sprawdź ilu peerów widzi Twój program
+            Console.WriteLine($"Próba wysyłki do {peers.Count} osób");
+
+            foreach (var peer in peers)
+            {
+                try
                 {
-                    // wyślij na każdy dostępny peer
-                    await tcp.SendMessage(json, peer.IP, peer.Port);
+                    await tcp.SendMessage(Parser.ParseModelToJson(new Model
+                    {
+                        Type = MessageType.MESSAGE,
+                        Name = _userName,
+                        payload = msg
+                    }), peer.IP, peer.Port);
                 }
-                // wyświetl moją wiadomość
-                ChatBox.Items.Add($"ME: {msg}");
-                // wyczyść pole input
-                MessageInput.Clear();
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Błąd wysyłki do " + peer.IP + ": " + ex.Message);
+                }
             }
         }
 
