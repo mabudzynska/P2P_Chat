@@ -13,7 +13,13 @@ namespace P2P_Chat.JsonParser
     {
         HELLO,
         MESSAGE,
-        GOODBYE
+        GOODBYE,
+
+        CREATE_GROUP,
+        GROUP_MESSAGE,
+        GROUP_INVITE,
+        GROUP_JOIN,
+        GROUP_LEAVE
     }
     /* Struktura Wiadomości - stosowany format: JSON */
     class Model
@@ -23,5 +29,11 @@ namespace P2P_Chat.JsonParser
         public int Port { get; set; } = 0;
 
         public string payload { get; set; } = "";
+
+        public string GroupId { get; set; } = "";
+
+        public string GroupName { get; set; } = "";
+
+        public List<string> Members { get; set; } = new();
     }
 }

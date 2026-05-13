@@ -30,7 +30,8 @@ namespace P2P_Chat
         private DiscoveryService discovery;
         // Menadżer zarządzający peerami
         private PeerManager peerManager;
-        
+        private GroupManager groupManager;
+        private string currentGroupId = "";
         public MainWindow(string userName)
         {
             InitializeComponent();
@@ -42,6 +43,8 @@ namespace P2P_Chat
             udp = new UdpService(50000);
             // Konstruktor menadżera peerów
             peerManager = new PeerManager();
+            // Konstruktor menadżera grup
+            groupManager = new GroupManager();
             // Inicjalizacja serwisu zarządzania statusem w sieci.
             discovery = new DiscoveryService(
                 udp,        // handler do serwisu UDP
@@ -94,30 +97,41 @@ namespace P2P_Chat
         private async void SendButton_Click(object sender, RoutedEventArgs e)
         {
             string msg = MessageInput.Text;
-            if (string.IsNullOrEmpty(msg)) return;
 
-            // Najpierw dodaj do siebie, żeby widzieć, że przycisk działa
+            if (string.IsNullOrEmpty(msg))
+                return;
+
             ChatBox.Items.Add($"ME: {msg}");
+
             MessageInput.Clear();
 
-            var peers = peerManager.GetPeers();
-            // Debug: sprawdź ilu peerów widzi Twój program
-            Console.WriteLine($"Próba wysyłki do {peers.Count} osób");
-
-            foreach (var peer in peers)
+            if (!string.IsNullOrEmpty(currentGroupId))
             {
-                try
+                await SendGroupMessage(currentGroupId, msg);
+            }
+            else
+            {
+                var peers = peerManager.GetPeers();
+
+                foreach (var peer in peers)
                 {
-                    await tcp.SendMessage(Parser.ParseModelToJson(new Model
+                    try
                     {
-                        Type = MessageType.MESSAGE,
-                        Name = _userName,
-                        payload = msg
-                    }), peer.IP, peer.Port);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Błąd wysyłki do " + peer.IP + ": " + ex.Message);
+                        await tcp.SendMessage(
+                            Parser.ParseModelToJson(new Model
+                            {
+                                Type = MessageType.MESSAGE,
+                                Name = _userName,
+                                payload = msg
+                            }),
+                            peer.IP,
+                            peer.Port
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Błąd wysyłki do " + peer.IP + ": " + ex.Message);
+                    }
                 }
             }
         }
@@ -125,7 +139,7 @@ namespace P2P_Chat
         // Callback dla odebranej wiadomości po UDP
         private void OnUdpMessage(string msg, IPEndPoint endpoint)
         {
-            
+
             Model? model = Parser.ParseJsonToModel(msg);
 
             // może być null ("?"), więc trzeba sprawdzić
@@ -150,7 +164,7 @@ namespace P2P_Chat
             var model = Parser.ParseJsonToModel(msg);
             // obsłuż wyjątek
             if (model == null) return;
-            
+
             // Tylko jeśli odebrana ramka jest typu MESSAGE
             if (model.Type == MessageType.MESSAGE)
             {
@@ -162,6 +176,261 @@ namespace P2P_Chat
                 });
                 // logging w terminalu na wszelki wypadek
                 Console.WriteLine($"{model.Name}: {model.payload}");
+            }
+            // Obsługa odebranej wiadomości CREATE_GROUP.
+            // Oznacza to, że inny peer w sieci utworzył nową grupę.
+            if (model.Type == MessageType.CREATE_GROUP)
+            {
+                // Utworzenie lokalnej kopii grupy w pamięci aplikacji.
+                // Każdy peer przechowuje własną listę grup.
+                groupManager.CreateGroup(
+                    model.GroupId,     // unikalny identyfikator grupy
+                    model.GroupName,   // nazwa grupy widoczna w GUI
+                    model.Name         // host/twórca grupy
+                );
+
+                // Dodanie hosta grupy jako pierwszego członka grupy.
+                // Twórca grupy automatycznie należy do swojej grupy.
+                groupManager.AddMember(model.GroupId, model.Name);
+
+                // Aktualizacja GUI musi zostać wykonana przez Dispatcher,
+                // ponieważ wiadomość TCP została odebrana w innym wątku.
+                Dispatcher.Invoke(() =>
+                {
+                    // Informacja w oknie czatu o wykryciu nowej grupy.
+                    ChatBox.Items.Add($"Group available: {model.GroupName}");
+
+                    // Odświeżenie listy grup widocznych w GUI.
+                    RefreshGroupList();
+                });
+            }
+
+            // Obsługa wiadomości GROUP_JOIN.
+            // Oznacza to, że użytkownik dołączył do istniejącej grupy.
+            if (model.Type == MessageType.GROUP_JOIN)
+            {
+                // Dodanie nowego użytkownika do lokalnej listy członków grupy.
+                // Każdy peer przechowuje własną kopię members list.
+                groupManager.AddMember(model.GroupId, model.Name);
+
+                // Aktualizacja GUI przez Dispatcher,
+                // ponieważ wiadomość została odebrana w osobnym wątku TCP.
+                Dispatcher.Invoke(() =>
+                {
+                    // Wyświetlenie informacji o dołączeniu użytkownika do grupy.
+                    ChatBox.Items.Add($"{model.Name} joined group");
+                });
+            }
+
+            // Obsługa wiadomości GROUP_MESSAGE.
+            // Jest to zwykła wiadomość wysłana do grupy.
+            if (model.Type == MessageType.GROUP_MESSAGE)
+            {
+                // Aktualizacja GUI w bezpieczny sposób z poziomu głównego wątku WPF.
+                Dispatcher.Invoke(() =>
+                {
+                    // Wyświetlenie wiadomości grupowej w oknie czatu.
+                    // Pokazywany jest identyfikator grupy, nadawca oraz treść wiadomości.
+                    ChatBox.Items.Add(
+                        $"[GROUP {model.GroupId}] {model.Name}: {model.payload}"
+                    );
+                });
+            }
+        }
+        // Metoda odpowiedzialna za utworzenie nowej grupy.
+        private async Task CreateGroup(string groupName)
+        {
+            // Wygenerowanie unikalnego identyfikatora grupy.
+            // GUID pozwala jednoznacznie identyfikować grupę w całej sieci P2P.
+            string groupId = Guid.NewGuid().ToString();
+
+            // Utworzenie grupy lokalnie w pamięci aplikacji.
+            // Każdy peer przechowuje własną listę grup.
+            groupManager.CreateGroup(groupId, groupName, _userName);
+
+            // Dodanie hosta (twórcy grupy) jako pierwszego członka grupy.
+            groupManager.AddMember(groupId, _userName);
+
+            // Utworzenie modelu wiadomości CREATE_GROUP,
+            // który zostanie wysłany do pozostałych peerów w sieci.
+            var model = new Model
+            {
+                Type = MessageType.CREATE_GROUP, // typ wiadomości sieciowej
+                Name = _userName,                // nazwa twórcy grupy (hosta)
+                GroupId = groupId,               // unikalny identyfikator grupy
+                GroupName = groupName            // nazwa grupy widoczna w GUI
+            };
+
+            // Konwersja obiektu Model do formatu JSON.
+            string json = Parser.ParseModelToJson(model);
+
+            // Wysłanie informacji o nowej grupie do wszystkich wykrytych peerów.
+            // Każdy peer po odebraniu CREATE_GROUP utworzy lokalną kopię grupy.
+            foreach (var peer in peerManager.GetPeers())
+            {
+                await tcp.SendMessage(json, peer.IP, peer.Port);
+            }
+
+            // Informacja lokalna w oknie czatu.
+            ChatBox.Items.Add($"Group created: {groupName}");
+
+            // Odświeżenie listy grup w GUI.
+            RefreshGroupList();
+        }
+
+        // Metoda odpowiedzialna za dołączenie użytkownika do istniejącej grupy.
+        private async Task JoinGroup(string groupId)
+        {
+            // Pobranie grupy z lokalnego GroupManagera.
+            // Jeśli grupa nie istnieje lokalnie, przerwij działanie funkcji.
+            var group = groupManager.GetGroup(groupId);
+
+            if (group == null)
+                return;
+
+            // Dodanie siebie lokalnie do members list.
+            // Dzięki temu peer od razu wie,
+            // że należy do tej grupy.
+            groupManager.AddMember(groupId, _userName);
+
+            // Utworzenie wiadomości GROUP_JOIN,
+            // informującej hosta grupy o nowym użytkowniku.
+            var model = new Model
+            {
+                Type = MessageType.GROUP_JOIN, // typ wiadomości sieciowej
+                Name = _userName,              // użytkownik dołączający do grupy
+                GroupId = groupId              // identyfikator grupy
+            };
+
+            // Konwersja modelu do JSON.
+            string json = Parser.ParseModelToJson(model);
+
+            // Wyszukanie hosta grupy na liście aktywnych peerów.
+            foreach (var peer in peerManager.GetPeers())
+            {
+                // Jeśli znaleziono hosta grupy,
+                // wyślij do niego wiadomość GROUP_JOIN.
+                if (peer.Name == group.HostName)
+                {
+                    await tcp.SendMessage(json, peer.IP, peer.Port);
+
+                    // Zakończ pętlę po wysłaniu wiadomości.
+                    break;
+                }
+            }
+        }
+
+        // Metoda odpowiedzialna za wysyłanie wiadomości grupowej.
+        private async Task SendGroupMessage(string groupId, string message)
+        {
+            // Pobranie grupy z lokalnego GroupManagera.
+            // Jeśli grupa nie istnieje, przerwij działanie funkcji.
+            var group = groupManager.GetGroup(groupId);
+
+            if (group == null)
+                return;
+
+            // Utworzenie modelu wiadomości grupowej.
+            // GROUP_MESSAGE zawiera:
+            // - identyfikator grupy,
+            // - nazwę nadawcy,
+            // - treść wiadomości.
+            var model = new Model
+            {
+                Type = MessageType.GROUP_MESSAGE, // typ wiadomości sieciowej
+                Name = _userName,                 // nazwa nadawcy
+                GroupId = groupId,                // identyfikator grupy
+                payload = message                 // treść wiadomości
+            };
+
+            // Konwersja modelu do formatu JSON.
+            string json = Parser.ParseModelToJson(model);
+
+            // Iteracja po wszystkich członkach grupy.
+            foreach (var member in group.Members)
+            {
+                // Pominięcie samego siebie.
+                // Lokalna wiadomość została już wyświetlona w ChatBox.
+                if (member == _userName)
+                    continue;
+
+                // Wyszukiwanie odpowiadającego peera
+                // na liście aktywnych użytkowników.
+                foreach (var peer in peerManager.GetPeers())
+                {
+                    // Jeśli znaleziono użytkownika należącego do grupy,
+                    // wyślij do niego wiadomość TCP.
+                    if (peer.Name == member)
+                    {
+                        await tcp.SendMessage(json, peer.IP, peer.Port);
+                    }
+                }
+            }
+        }
+        // Callback wywoływany po kliknięciu przycisku "Create Group".
+        private async void CreateGroup_Click(object sender, RoutedEventArgs e)
+        {
+            // Utworzenie nowej grupy o nazwie "Test Group".
+            // Aktualnie nazwa jest wpisana na stałe (hardcoded).
+            // W przyszłości można dodać okno dialogowe lub TextBox
+            // do wpisywania własnej nazwy grupy.
+            await CreateGroup("Test Group");
+        }
+
+        // Metoda odpowiedzialna za odświeżenie listy grup w GUI.
+        private void RefreshGroupList()
+        {
+            // Wyczyść aktualną zawartość listy grup.
+            GroupList.Items.Clear();
+
+            // Pobierz wszystkie grupy z lokalnego GroupManagera.
+            foreach (var group in groupManager.GetGroups())
+            {
+                // Dodaj nazwę grupy do kontrolki ListBox.
+                // Dzięki temu grupa pojawi się w interfejsie użytkownika.
+                GroupList.Items.Add(group.GroupName);
+            }
+        }
+
+        // Callback wywoływany po zmianie zaznaczenia grupy w GroupList.
+        private void GroupList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Wyszukanie obiektu grupy odpowiadającego zaznaczonej nazwie w ListBox.
+            var selected = groupManager
+                .GetGroups()
+                .FirstOrDefault(g => g.GroupName == GroupList.SelectedItem?.ToString());
+
+            // Jeśli grupa została znaleziona,
+            // ustaw ją jako aktualnie aktywną grupę czatu.
+            if (selected != null)
+            {
+                // currentGroupId określa,
+                // do której grupy będą wysyłane wiadomości.
+                currentGroupId = selected.GroupId;
+            }
+        }
+
+        // Callback wywoływany po podwójnym kliknięciu grupy w GroupList.
+        private async void GroupList_DoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            // Wyszukanie zaznaczonej grupy na podstawie nazwy wybranej w GUI.
+            var selected = groupManager
+                .GetGroups()
+                .FirstOrDefault(g => g.GroupName == GroupList.SelectedItem?.ToString());
+
+            // Jeśli grupa istnieje:
+            if (selected != null)
+            {
+                // Wyślij wiadomość GROUP_JOIN do hosta grupy.
+                // Powoduje to dołączenie użytkownika do members list.
+                await JoinGroup(selected.GroupId);
+
+                // Ustaw aktualnie wybraną grupę jako aktywną.
+                // Wszystkie kolejne wiadomości będą wysyłane do tej grupy.
+                currentGroupId = selected.GroupId;
+
+                // Informacja lokalna w oknie czatu.
+                ChatBox.Items.Add($"Joined group: {selected.GroupName}");
             }
         }
     }
