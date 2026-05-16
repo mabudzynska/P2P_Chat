@@ -15,28 +15,30 @@
 
         <ListBox x:Name="ChatBox" Grid.Row="0" Grid.Column="0" Margin="0,0,10,10"/>
 
-        <StackPanel Grid.Row="0" Grid.Column="1">
+
+        <StackPanel Grid.Row="0" Grid.Column="1" Margin="5,0,0,0">
+            <Label Content="Twój Nick:" Padding="0,5,0,2"/>
+            <TextBox x:Name="NickEditBox" 
+             TextChanged="NickEditBox_TextChanged" 
+             Margin="0,0,0,10"/>
 
             <HeaderedContentControl Header="Użytkownicy">
-                <ListBox x:Name="PeersListBox"
-                 Height="150"
-                 Margin="0,0,0,10"/>
+                <ListBox x:Name="PeersListBox" Height="100" Margin="0,0,0,10"/>
             </HeaderedContentControl>
 
+            <Label Content="Nazwa grupy:" Padding="0,5,0,2"/>
+            <TextBox x:Name="GroupNameEditBox" Text="Moja Grupa" Margin="0,0,0,5"/>
+
+            <Button Content="Create Group" Height="30" Click="CreateGroup_Click" Margin="0,0,0,10"/>
+            <Button Content="Leave Group" Height="30" Click="LeaveGroup_Click" Margin="0,0,0,10"/>
+
             <HeaderedContentControl Header="Grupy">
-                <ListBox x:Name="GroupList"
-                 Height="150"
-                 Margin="0,0,0,10"
+                <ListBox x:Name="GroupList" Height="100" Margin="0,0,0,10"
                  SelectionChanged="GroupList_SelectionChanged"
                  MouseDoubleClick="GroupList_DoubleClick"/>
             </HeaderedContentControl>
-
-            <Button Content="Create Group"
-            Height="30"
-            Click="CreateGroup_Click"/>
-        
         </StackPanel>
-        
+
         <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal">
             <TextBox x:Name="MessageInput" Width="495" Margin="0,0,5,0"/>
             <Button Content="Wyślij" Click="SendButton_Click" Width="80"/>

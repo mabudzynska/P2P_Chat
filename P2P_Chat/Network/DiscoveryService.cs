@@ -14,7 +14,7 @@ namespace P2P_Chat.Network
         // Obiekt do wysyłania / odbierania danych po UDP.
         private readonly UdpService udpService;
         // Nazwa Zalogowanej Osoby
-        private readonly string Name;
+        public string Name { get; set; }
         // Port komunikacyjny TCP
         private readonly int TcpPort;
         // Menadżer peerów
