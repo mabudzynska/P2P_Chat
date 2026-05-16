@@ -88,13 +88,13 @@ namespace P2P_Chat
 
                     Dispatcher.Invoke(() =>
                     {
-                        // 1. Aktualizujemy "Ja" na samej górze
+                        // Aktualizujemy "Ja" na samej górze
                         if (PeersListBox.Items.Count == 0)
                             PeersListBox.Items.Add($"{_userName} (ja)");
                         else
                             PeersListBox.Items[0] = $"{_userName} (ja)";
 
-                        // 2. Usuwamy nieaktywnych (od indeksu 1, żeby nie usunąć siebie)
+                        // Usuwamy nieaktywnych (od indeksu 1, żeby nie usunąć siebie)
                         for (int i = PeersListBox.Items.Count - 1; i >= 1; i--)
                         {
                             string item = PeersListBox.Items[i].ToString();
@@ -102,7 +102,7 @@ namespace P2P_Chat
                                 PeersListBox.Items.RemoveAt(i);
                         }
 
-                        // 3. Dodajemy nowych
+                        // Dodajemy nowych
                         foreach (var peer in activePeers)
                         {
                             string entry = $"{peer.Name} ({peer.IP})";
