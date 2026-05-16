@@ -13,7 +13,7 @@ namespace P2P_Chat.Network
         private readonly Dictionary<string, Peer> peers = new();
 
         /* Konstruktora menadżera peerów, ustawienie timeoutu peera na 15 s*/
-        public PeerManager() { timeout = TimeSpan.FromSeconds(15); }
+        public PeerManager() { timeout = TimeSpan.FromSeconds(45); }
         // Unikalny klucz dla każdego peer, Adres IP oraz port.
         private string GetKey(string ip, int port) => $"{ip}:{port}";
 
